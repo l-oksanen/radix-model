@@ -1,0 +1,17 @@
+name = "RadixModel"
+version = "0.1.0"
+keywords = ["math"]
+
+[leanOptions]
+pp.unicode.fun = true 
+relaxedAutoImplicit = false
+maxSynthPendingDepth = 3
+linter.unusedVariables = false
+
+[[require]]
+name = "mathlib"
+scope = "leanprover-community"
+rev = "v4.29.0"
+
+[[lean_lib]]
+name = "RadixModel"
