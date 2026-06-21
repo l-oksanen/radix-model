@@ -7,8 +7,8 @@ namespace RadixModel
 def eselFlt (emin prec e : ℤ) := max (e - prec) emin
 
 instance validEselFlt (emin prec : ℤ)
-  (h : 0 < prec)
-  : ValidEsel (eselFlt emin prec)
+  (hprec : 0 < prec)
+  : ValidExpSelection (eselFlt emin prec)
 where
   large_bound := by
     intros

@@ -4,6 +4,19 @@ import RadixModel.Radix
 namespace RadixModel
 
 
+/-! ### Exponent selection -/
+
+/--
+A valid exponent selection satisfies a growth bound for large values
+and stays constant for small values.
+-/
+class ValidExpSelection (esel : ℤ → ℤ) : Prop where
+  large_bound (k : ℤ) (h : esel k < k) : esel (k + 1) ≤ k
+  small_stable (k : ℤ) (h : k ≤ esel k) :
+    esel (esel k + 1) ≤ esel k
+    ∧ ∀ l : ℤ, l ≤ esel k → esel l = esel k
+
+
 /-! ### Radix representations -/
 
 /-- A radix representation with value `coefficient * β ^ exponent`. -/
@@ -33,12 +46,18 @@ lemma magnitude_iff (β : Radix) (k : ℤ) {x : ℝ}
   simp [magnitude]
   grind [Int.zpow_le_iff_le_log, Int.lt_zpow_iff_log_lt]
 
-/--
-The magnitude of zero is one.
--/
+/-- The magnitude of zero is one. -/
+@[simp]
 lemma magnitude_zero {β : Radix}
   : magnitude β 0 = 1
 := by
+  simp [magnitude]
+
+/-- The magnitude is an even function. -/
+lemma even_magnitude (β : Radix)
+  : Function.Even (magnitude β)
+:= by
+  intro x
   simp [magnitude]
 
 
@@ -78,6 +97,8 @@ end RadixRep
 open RadixRep
 
 
+/-! ### Rounding and its symmetries -/
+
 /--
 Round `x` in radix `β`.
 
@@ -89,15 +110,76 @@ noncomputable def round (β : Radix) (esel : ℤ → ℤ) (rnd : ℝ → ℤ)
 :=
   (mkRounded (β := β) esel rnd x).value
 
+/-- Zero rounds to zero. -/
+@[simp]
+lemma round_zero (β : Radix) (esel : ℤ → ℤ) (rnd : ℝ → ℤ)
+  [hrnd : ValidRounding rnd]
+  : round β esel rnd 0 = 0
+:= by
+  simp [round, value, mkRounded, rawCoeff, selectExp]
+
+/-- Rounding by truncation toward zero is an odd function. -/
+lemma odd_round_truncate (β : Radix) (esel : ℤ → ℤ)
+  : Function.Odd (round β esel rndTruncate)
+:= by
+  simp [Function.Odd, round, value, mkRounded, rawCoeff, selectExp]
+  intro x
+  have (y : ℝ) := odd_rndTruncate y
+  simp [even_magnitude β x, this]
+
+/-- Rounding produces rounding using floor or ceil. -/
+lemma round_floor_or_ceil (β : Radix) (esel : ℤ → ℤ) (rnd : ℝ → ℤ)
+  [hrnd : ValidRounding rnd]
+  (x : ℝ)
+  : round β esel rnd x = round β esel rndFloor x
+    ∨ round β esel rnd x = round β esel rndCeil x
+:= by
+  simp [round, value, mkRounded]
+  grind [rnd_eq_floor_or_ceil rnd]
+
+/--
+Rounding of a negative using floor produces the negative of rounding
+using ceil.
+-/
+lemma round_floor_neg (β : Radix) (esel : ℤ → ℤ) (x : ℝ)
+  : round β esel rndFloor (-x) = -round β esel rndCeil x
+:= by
+  simp [
+    round, value, mkRounded, rawCoeff, selectExp, even_magnitude β x,
+    Int.floor_neg
+  ]
+
+/--
+Rounding of a negative using ceil produces the negative of rounding
+using floor.
+-/
+lemma round_ceil_neg (β : Radix) (esel : ℤ → ℤ) (x : ℝ)
+  : round β esel rndCeil (-x) = -round β esel rndFloor x
+:= by
+  simp [
+    round, value, mkRounded, rawCoeff, selectExp, even_magnitude β x,
+    Int.ceil_neg
+  ]
+
 
 /-! ### Representable reals -/
 
 /--
 A real number `x` is representable in radix `β` for exponent selection
-`esel` if floor rounding preserves it.
+`esel` if rounding by truncation toward zero preserves it.
 -/
 def Representable (β : Radix) (esel : ℤ → ℤ) (x : ℝ) : Prop :=
-  round β esel rndFloor x = x
+  round β esel rndTruncate x = x
+
+/--
+Representable is an even predicate.
+-/
+lemma even_representable (β : Radix) (esel : ℤ → ℤ) (x : ℝ)
+  (hx : Representable β esel (-x)) : Representable β esel x
+:= by
+  simp [Representable, odd_round_truncate β esel x] at *
+  assumption
+
 
 /--
 The subtype of reals representable in radix `β` for exponent selection
@@ -106,53 +188,52 @@ The subtype of reals representable in radix `β` for exponent selection
 abbrev RepresentableReal (β : Radix) (esel : ℤ → ℤ) :=
   {x : ℝ // Representable β esel x}
 
+/-- Zero is representable. -/
+lemma representable_zero {β : Radix} (esel : ℤ → ℤ)
+  : Representable β esel 0
+:= by
+  simp [Representable, round, mkRounded, value, rawCoeff, rndTruncate]
+
 /--
 A radix power `β ^ e` is representable if the exponent selected at
 magnitude `e + 1` is at most `e`.
 -/
 lemma representable_radix_pow {β : Radix} {esel : ℤ → ℤ} {e : ℤ}
-  (h : esel (e + 1) ≤ e)
+  (he : esel (e + 1) ≤ e)
   : Representable β esel ((β : ℝ) ^ e)
 := by
   have : selectExp β esel (β ^ e) = esel (e + 1) := by
     simp [selectExp]
     have := magnitude_iff β (e + 1) (by grind : (β : ℝ) ^ e ≠ 0)
     grind
-  simp [Representable, round, mkRounded, value, rawCoeff]
+  simp [Representable, round, mkRounded, value, rawCoeff, rndTruncate]
   grind
 
 /--
 The value of a radix representation is representable if the exponent
 selected for that value is no larger than the representation's
-exponent,  or if the coefficient is zero.
+exponent, or if the coefficient is zero.
 -/
 lemma RadixRep.value_representable {β : Radix} {esel : ℤ → ℤ}
   {x : RadixRep β}
-  (h : selectExp β esel x.value ≤ x.exponent ∨ x.coefficient = 0)
+  (hx : selectExp β esel x.value ≤ x.exponent ∨ x.coefficient = 0)
   : Representable β esel x.value
 := by
-  simp [Representable, round, mkRounded, value, rawCoeff]
-  obtain h | h := h
+  simp [Representable, round, mkRounded, value, rawCoeff, rndTruncate]
+  obtain h | h := hx
   · simp [value] at h
     grind
   · simp [h]
 
 
-/-! ### Rounding produces representable values -/
+/-! ### Rounding produces representable values
 
-/--
-A valid exponent selection satisfies a growth bound for large values
-and stays constant for small values.
+
+Theorem `representable_round` below says that rounding produces representable values. We first prove a number of auxiliary lemmas.
 -/
-class ValidEsel (esel : ℤ → ℤ) : Prop where
-  large_bound (k : ℤ) (h : esel k < k) : esel (k + 1) ≤ k
-  small_stable (k : ℤ) (h : k ≤ esel k) :
-    esel (esel k + 1) ≤ esel k
-    ∧ ∀ l : ℤ, l ≤ esel k → esel l = esel k
-
 
 lemma round_pos_large {β : Radix} {esel : ℤ → ℤ} (rnd : ℝ → ℤ)
-  [hexp : ValidEsel esel] [hrnd : ValidRnd rnd]
+  [hexp : ValidExpSelection esel] [hrnd : ValidRounding rnd]
   {x : ℝ} {k : ℤ}
   (hxl : β ^ (k - 1) ≤ x) (hxu : x < β ^ k)
   (hk : esel k < k)
@@ -208,7 +289,7 @@ lemma round_pos_large {β : Radix} {esel : ℤ → ℤ} (rnd : ℝ → ℤ)
   grind
 
 lemma round_pos_small {β : Radix} {esel : ℤ → ℤ} (rnd : ℝ → ℤ)
-  [hexp : ValidEsel esel] [hrnd : ValidRnd rnd]
+  [hexp : ValidExpSelection esel] [hrnd : ValidRounding rnd]
   {x : ℝ} {k : ℤ}
   (hl : β ^ (k - 1) ≤ x) (hu : x < β ^ k)
   (hk : k ≤ esel k)
@@ -242,7 +323,7 @@ lemma round_pos_small {β : Radix} {esel : ℤ → ℤ} (rnd : ℝ → ℤ)
 
   simp [round, mkRounded, value]
   have : rnd c = 0 ∨ rnd c = 1 := by grind
-  obtain _ | h := this
+  obtain h | h := this
   · grind
   · right
     calc
@@ -250,8 +331,8 @@ lemma round_pos_small {β : Radix} {esel : ℤ → ℤ} (rnd : ℝ → ℤ)
       _ = 1 * b ^ e := by simp [h]
       _ = b ^ (esel k) := by grind
 
-lemma representable_round_pos {β : Radix} {esel : ℤ → ℤ} (rnd : ℝ → ℤ)
-  [hexp : ValidEsel esel] [hrnd : ValidRnd rnd]
+lemma representable_round_pos {β : Radix} (esel : ℤ → ℤ) (rnd : ℝ → ℤ)
+  [hexp : ValidExpSelection esel] [hrnd : ValidRounding rnd]
   {x : ℝ}
   (hx : 0 < x)
   : Representable β esel (round β esel rnd x)
@@ -263,7 +344,8 @@ lemma representable_round_pos {β : Radix} {esel : ℤ → ℤ} (rnd : ℝ → �
   · have : y = 0 ∨ y = β ^ (esel k) := by
       apply round_pos_small <;> grind
     obtain h | h := this
-    · simp [h, Representable, round, mkRounded, value, rawCoeff]
+    · simp [h]
+      apply representable_zero
     · simp [h]
       cases hexp
       apply representable_radix_pow
@@ -280,5 +362,24 @@ lemma representable_round_pos {β : Radix} {esel : ℤ → ℤ} (rnd : ℝ → �
         grind
       cases hexp
       apply (mkRounded esel rnd x).value_representable
-      simp [hy, round, mkRounded, value, selectExp] at this ⊢
+      simp [hy, round, value, mkRounded, selectExp] at this ⊢
       grind
+
+
+/-- Rounding produces representable values. -/
+theorem representable_round {β : Radix} (esel : ℤ → ℤ) (rnd : ℝ → ℤ)
+  [hexp : ValidExpSelection esel] [hrnd : ValidRounding rnd]
+  (x : ℝ)
+  : Representable β esel (round β esel rnd x)
+:= by
+  obtain h | h | h := lt_trichotomy x 0
+  · apply even_representable
+    obtain h | h := round_floor_or_ceil β esel rnd x
+    all_goals
+      simp [h, ←round_ceil_neg β esel x, ←round_floor_neg β esel x]
+      apply representable_round_pos
+      grind
+  · simp [h]
+    apply representable_zero
+  . apply representable_round_pos
+    assumption
