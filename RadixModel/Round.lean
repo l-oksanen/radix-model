@@ -66,10 +66,13 @@ noncomputable def rndNearest (x : ℝ) :=
   else if x - f > 1/2 then f + 1
   else if Even f then f else f + 1
 
+@[grind =]
+lemma fract_eq (x : ℝ) : Int.fract x = x - ⌊x⌋ := by simp
+
 instance validRndNearest : ValidRounding rndNearest where
   id := by simp [rndNearest]
-  monotone {x y : ℝ} (h : x ≤ y) := by
-    have (x : ℝ) : Int.fract x = x - ⌊x⌋ := rfl
+  monotone := by
+    intro x y h
     have := Int.floor_le_floor h
     simp [rndNearest]
     grind
@@ -91,7 +94,6 @@ lemma odd_rndTruncate : Function.Odd rndTruncate
 /-- Nearest even rounding error is one half. -/
 lemma nearest_dist_le_half (x : ℝ) : |rndNearest x - x| ≤ 2⁻¹
 := by
-  have : Int.fract x = x - ⌊x⌋ := rfl
   have := Int.fract_lt_one x
   have := Int.fract_nonneg x
   simp [rndNearest]
